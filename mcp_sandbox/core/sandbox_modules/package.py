@@ -6,6 +6,7 @@ from mcp_sandbox.utils.config import PYPI_INDEX_URL
 class SandboxPackageMixin:
 
     def _install_package_sync(self, sandbox_id: str, package_name: str) -> Dict[str, Any]:
+        self._touch(sandbox_id) 
         from mcp_sandbox.utils.config import logger
         status_key = f"{sandbox_id}:{package_name}"
         try:
@@ -114,6 +115,7 @@ class SandboxPackageMixin:
             }
 
     def check_package_status(self, sandbox_id: str, package_name: str) -> Dict[str, Any]:
+        self._touch(sandbox_id)
         from mcp_sandbox.utils.config import logger
         error = self.verify_sandbox_exists(sandbox_id)
         if error:
@@ -179,6 +181,8 @@ class SandboxPackageMixin:
         return status
 
     def list_installed_packages(self, sandbox_id: str) -> list:
+        self._touch(sandbox_id) 
+
         import re
         import json
         from mcp_sandbox.utils.config import logger

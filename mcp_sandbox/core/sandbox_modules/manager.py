@@ -1,6 +1,6 @@
 import uuid
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Optional, Any
 from pathlib import Path
 import hashlib
@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from mcp_sandbox.utils.config import logger, DEFAULT_DOCKER_IMAGE, config
 from mcp_sandbox.db.database import db
 import docker
+from mcp_sandbox.utils.task_manager import PeriodicTaskManager
 
 class SandboxManager:
     """Manage Sandboxes with automatic creation"""
@@ -24,6 +25,14 @@ class SandboxManager:
             raise
         self._ensure_sandbox_image()
         self._load_sandbox_records()
+
+        self._IDLE_MINUTES   = config.get("sandbox", {}).get("idle_minutes", 15)
+        _interval            = config.get("sandbox", {}).get("cleanup_interval_seconds", 300)
+        # Kick off the background thread
+        PeriodicTaskManager.start_container_cleanup(
+            self._cleanup_idle_sandboxes, _interval
+        )
+
         logger.info(f"SandboxManager initialized, using base image: {self.base_image}")
 
     def _ensure_sandbox_image(self):
@@ -132,7 +141,45 @@ class SandboxManager:
         except Exception as e:
             logger.error(f"Failed to create sandbox: {e}", exc_info=True)
             raise
-            
+
+    def _touch(self, sandbox_id: str) -> None:
+        """Update last-used timestamp in RAM"""
+        self.sandbox_last_used[sandbox_id] = datetime.utcnow()
+
+    def _cleanup_idle_sandboxes(self) -> None:
+        """Remove stopped containers older than IDLE_MINUTES and purge DB record."""
+        cutoff = datetime.utcnow() - timedelta(minutes=self._IDLE_MINUTES)
+        try:
+            containers = self.sandbox_client.containers.list(
+                all=True, filters={"label": "python-sandbox"}
+            )
+            for c in containers:
+                # skip anything still running
+                if c.status == "running":
+                    continue
+
+                # derive last-used time: prefer RAM dict, else Docker’s FinishedAt
+                last_used = self.sandbox_last_used.get(c.id)
+                if not last_used:
+                    # FinishedAt is RFC339 timestamp like "2025-06-07T13:44:23.781234Z"
+                    last_used = datetime.fromisoformat(
+                        c.attrs["State"]["FinishedAt"].replace("Z", "+00:00")
+                    )
+
+                if last_used < cutoff:
+                    from mcp_sandbox.db.database import db
+                    # 1) remove container
+                    c.remove(force=True)      # safe even if already gone  [oai_citation:2‡docs.docker.com](https://docs.docker.com/reference/cli/docker/container/rm/?utm_source=chatgpt.com)
+                    # 2) drop DB record (if any)
+                    sb = db.get_sandbox_by_container_id(c.id)  # new helper, see §4
+                    if sb:
+                        db.delete_sandbox(sb["id"])
+                    # 3) forget in-memory
+                    self.sandbox_last_used.pop(c.id, None)
+                    logger.info(f"Pruned idle sandbox {c.id}")
+        except Exception as e:
+            logger.error(f"Idle-sandbox cleanup error: {e}", exc_info=True)
+
     def create_user_sandbox(self, user_id: Optional[str] = None, name: Optional[str] = None) -> dict:
         """Create a new sandbox for a user, with database record and Docker container
         

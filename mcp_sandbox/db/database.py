@@ -188,6 +188,19 @@ class Database:
             print(f"Error deleting sandbox: {e}")
             return False
 
+    def get_sandbox_by_container_id(self, container_id: str) -> Optional[Dict]:
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT * FROM sandboxes WHERE docker_container_id = ?", (container_id,)
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def list_sandboxes(self) -> List[Dict]:
+        cur = self.conn.cursor()
+        cur.execute("SELECT * FROM sandboxes")
+        rows = cur.fetchall()
+        return [dict(r) for r in rows]
 
 # Create global instance
 db = Database()

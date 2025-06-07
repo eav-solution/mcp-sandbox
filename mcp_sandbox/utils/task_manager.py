@@ -24,3 +24,10 @@ class PeriodicTaskManager:
     def start_file_cleanup(cleanup_func) -> None:
         """Start background task for periodic file cleanup"""
         PeriodicTaskManager.start_task(cleanup_func, 600, "automatic file cleanup") 
+
+    @staticmethod
+    def start_container_cleanup(cleanup_func, interval_seconds: int = 300) -> None:
+        """Start background task for periodic container cleanup"""
+        PeriodicTaskManager.start_task(
+            cleanup_func, interval_seconds, "automatic container cleanup"
+        )

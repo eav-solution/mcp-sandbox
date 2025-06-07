@@ -4,6 +4,7 @@ import time
 class SandboxExecutionMixin:
     def execute_python_code(self, sandbox_id: str, code: str) -> Dict[str, Any]:
         # Verify sandbox exists (now using sandbox_id instead of docker container ID)
+        self._touch(sandbox_id) 
         error = self.verify_sandbox_exists(sandbox_id)
         if error:
             return error
@@ -98,6 +99,7 @@ class SandboxExecutionMixin:
         Returns:
             Dictionary containing stdout, stderr and exit_code
         """
+        self._touch(sandbox_id) 
         logger = self._get_logger()
         
         # Verify if sandbox exists

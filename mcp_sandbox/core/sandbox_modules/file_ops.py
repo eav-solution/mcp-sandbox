@@ -5,6 +5,7 @@ from pathlib import Path
 
 class SandboxFileOpsMixin:
     def list_files_in_sandbox(self, sandbox_id: str, directory: str = "/app/results", with_stat: bool = False) -> List:
+        self._touch(sandbox_id) 
         from mcp_sandbox.utils.config import logger
         try:
             container, error = self.get_container_by_sandbox_id(sandbox_id)
@@ -40,11 +41,12 @@ class SandboxFileOpsMixin:
             return []
 
     def get_file_link(self, sandbox_id: str, file_path: str) -> str:
+        self._touch(sandbox_id) 
         from mcp_sandbox.utils.config import config
         from mcp_sandbox.db.database import db
         
         base_url = getattr(config, "BASE_URL", None) or "http://localhost:8000"
-        
+        api_key: str | None = None 
         sandbox = db.get_sandbox(sandbox_id)
         if sandbox and sandbox.get("user_id"):
             user_id = sandbox.get("user_id")
@@ -60,6 +62,7 @@ class SandboxFileOpsMixin:
         return url
 
     def upload_file_to_sandbox(self, sandbox_id: str, local_file_path: str, dest_path: str = "/app/results") -> dict:
+        self._touch(sandbox_id)
         from mcp_sandbox.utils.config import logger
         error = self.verify_sandbox_exists(sandbox_id)
         if error:
