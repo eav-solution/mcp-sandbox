@@ -1,6 +1,6 @@
 import uuid
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Any
 from pathlib import Path
 import hashlib
@@ -82,7 +82,7 @@ class SandboxManager:
                 if check_changes:
                     build_info = {
                         'dockerfile_hash': self._get_file_hash(sandboxfile_path),
-                        'build_time': datetime.now().isoformat(),
+                        'build_time': datetime.now(timezone.utc).isoformat(),
                         'image_name': custom_image_name
                     }
                     with open(build_info_file, 'w') as f:
@@ -111,7 +111,7 @@ class SandboxManager:
             sandboxes = self.sandbox_client.containers.list(all=True, filters={"label": "python-sandbox"})
             for sandbox in sandboxes:
                 sandbox_id = sandbox.id
-                self.sandbox_last_used[sandbox_id] = datetime.now()
+                self.sandbox_last_used[sandbox_id] = datetime.now(timezone.utc)
                 logger.info(f"Loaded existing sandbox: {sandbox_id}")
         except Exception as e:
             logger.error(f"Failed to load existing sandboxes: {e}", exc_info=True)
@@ -136,7 +136,7 @@ class SandboxManager:
             sandbox.start()
             docker_container_id = sandbox.id
             logger.info(f"Created new sandbox: {docker_container_id} (name: {sandbox_name})")
-            self.sandbox_last_used[docker_container_id] = datetime.now()
+            self.sandbox_last_used[docker_container_id] = datetime.now(timezone.utc)
             return docker_container_id
         except Exception as e:
             logger.error(f"Failed to create sandbox: {e}", exc_info=True)
@@ -144,11 +144,11 @@ class SandboxManager:
 
     def _touch(self, sandbox_id: str) -> None:
         """Update last-used timestamp in RAM"""
-        self.sandbox_last_used[sandbox_id] = datetime.utcnow()
+        self.sandbox_last_used[sandbox_id] = datetime.now(timezone.utc)
 
     def _cleanup_idle_sandboxes(self) -> None:
         """Remove containers with no recent activity beyond ``idle_minutes``."""
-        cutoff = datetime.utcnow() - timedelta(minutes=self._IDLE_MINUTES)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=self._IDLE_MINUTES)
         try:
             containers = self.sandbox_client.containers.list(
                 all=True, filters={"label": "python-sandbox"}
@@ -162,6 +162,10 @@ class SandboxManager:
                     ts = state.get(ts_field)
                     if ts:
                         last_used = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+                if last_used:
+                    if last_used.tzinfo is None:
+                        last_used = last_used.replace(tzinfo=timezone.utc)
 
                 if last_used and last_used < cutoff:
                     from mcp_sandbox.db.database import db
@@ -256,7 +260,7 @@ class SandboxManager:
             logger.debug(f"[get_container_by_sandbox_id] Getting container {container_id} for sandbox {sandbox_id}")
             container = self.sandbox_client.containers.get(container_id)
             # Update last used time
-            self.sandbox_last_used[container_id] = datetime.now()
+            self.sandbox_last_used[container_id] = datetime.now(timezone.utc)
             return container, None
         except docker.errors.NotFound:
             logger.error(f"[get_container_by_sandbox_id] Container {container_id} not found for sandbox {sandbox_id}")
