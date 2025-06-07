@@ -10,15 +10,13 @@ from typing import List, Optional
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from jose import JWTError, jwt
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import Response
 
 from mcp_sandbox.utils.config import REQUIRE_AUTH, DEFAULT_USER_ID, logger
 from mcp_sandbox.auth.utils import SECRET_KEY, ALGORITHM
 from mcp_sandbox.db.database import db
 
 
-class AuthMiddleware(BaseHTTPMiddleware):
+class AuthMiddleware:
     """Authentication middleware that enforces auth for protected routes"""
     
     def __init__(
@@ -34,7 +32,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             public_paths: List of path prefixes that are exempt from authentication
             public_path_regexes: List of regex patterns for paths exempt from authentication
         """
-        super().__init__(app)
+        self.app = app
         self.public_paths = public_paths or [
             "/api/register",
             "/api/token",
@@ -56,21 +54,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self.compiled_regexes = [re.compile(pattern) for pattern in self.public_path_regexes]
         logger.info(f"Auth middleware initialized with requireAuth={REQUIRE_AUTH}")
     
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
-        """Process each request through the middleware
-        
-        Args:
-            request: The incoming request
-            call_next: Function to call the next middleware or route handler
-            
-        Returns:
-            The response from the route handler or an error response
-        """
+    async def __call__(self, scope, receive, send) -> None:
+        """Process each request through the middleware"""
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope, receive)
+
         # Always allow OPTIONS requests for CORS
         if request.method == "OPTIONS":
-            return await call_next(request)
+            await self.app(scope, receive, send)
+            return
             
         # Short-circuit if authentication is disabled in config
         if not REQUIRE_AUTH:
@@ -78,30 +73,36 @@ class AuthMiddleware(BaseHTTPMiddleware):
             request.state.user = {
                 "id": DEFAULT_USER_ID,
                 "username": "root",
-                "is_active": True
+                "is_active": True,
             }
-            return await call_next(request)
+            scope["state"] = request.state
+            await self.app(scope, receive, send)
+            return
             
         # Check if this is a public path that doesn't require authentication
         path = request.url.path
         
         # Skip auth for public paths
         if self._is_public_path(path):
-            return await call_next(request)
+            await self.app(scope, receive, send)
+            return
             
         # Authenticate the request
         user = await self._authenticate_request(request)
         if user:
-            # Store authenticated user in request state for route handlers
             request.state.user = user
-            return await call_next(request)
+            scope["state"] = request.state
+            await self.app(scope, receive, send)
+            return
         
         # Return 401 Unauthorized if authentication failed
-        return JSONResponse(
+        response = JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
             content={"detail": "Authentication required"},
             headers={"WWW-Authenticate": "Bearer"},
         )
+        await response(scope, receive, send)
+        return
     
     def _is_public_path(self, path: str) -> bool:
         """Check if a path is public and doesn't require authentication
