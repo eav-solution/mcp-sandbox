@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request, HTTPException, status
+from fastapi.responses import Response
 from mcp_sandbox.api.sandbox_file import router as sandbox_file_router
 from mcp.server.sse import SseServerTransport
 
@@ -51,7 +52,7 @@ def configure_app(app: FastAPI, sandbox_plugin):
             detail="Invalid API Key",
         )
 
-    async def handle_event_stream(request: Request) -> None:
+    async def handle_event_stream(request: Request) -> Response:
         """Handle Server-Sent Events (SSE) connections"""
         # Validate API key before proceeding
         user = await validate_api_key(request)
@@ -72,6 +73,9 @@ def configure_app(app: FastAPI, sandbox_plugin):
                 write_stream,
                 initialization_options,
             )
+
+        # After the SSE connection is closed, return an empty response
+        return Response()
 
     # Add SSE routes
     app.add_route("/sse", handle_event_stream)
