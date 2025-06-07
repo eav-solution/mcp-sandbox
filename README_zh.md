@@ -25,6 +25,7 @@ Python MCP Sandbox是一个交互式Python代码执行环境，允许用户和LL
 - 🐳 **Docker隔离**：在隔离的Docker容器中安全运行Python代码
 - 📦 **包管理**：轻松安装和管理Python包
 - 📊 **文件生成**：支持生成文件并通过网络链接访问
+- 🕑 **自动清理**：沙盒在 `idle_minutes`（默认15分钟）无活动后自动删除
 
 ## 安装
 
