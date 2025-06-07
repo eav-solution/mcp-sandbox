@@ -147,34 +147,38 @@ class SandboxManager:
         self.sandbox_last_used[sandbox_id] = datetime.utcnow()
 
     def _cleanup_idle_sandboxes(self) -> None:
-        """Remove stopped containers older than IDLE_MINUTES and purge DB record."""
+        """Remove containers with no recent activity beyond ``idle_minutes``."""
         cutoff = datetime.utcnow() - timedelta(minutes=self._IDLE_MINUTES)
         try:
             containers = self.sandbox_client.containers.list(
                 all=True, filters={"label": "python-sandbox"}
             )
             for c in containers:
-                # skip anything still running
-                if c.status == "running":
-                    continue
-
-                # derive last-used time: prefer RAM dict, else Docker’s FinishedAt
+                # derive last-used time: prefer RAM dict, fall back to Docker timestamps
                 last_used = self.sandbox_last_used.get(c.id)
                 if not last_used:
-                    # FinishedAt is RFC339 timestamp like "2025-06-07T13:44:23.781234Z"
-                    last_used = datetime.fromisoformat(
-                        c.attrs["State"]["FinishedAt"].replace("Z", "+00:00")
-                    )
+                    state = c.attrs.get("State", {})
+                    ts_field = "StartedAt" if c.status == "running" else "FinishedAt"
+                    ts = state.get(ts_field)
+                    if ts:
+                        last_used = datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
-                if last_used < cutoff:
+                if last_used and last_used < cutoff:
                     from mcp_sandbox.db.database import db
-                    # 1) remove container
+                    # 1) stop container if still running
+                    if c.status == "running":
+                        try:
+                            c.stop(timeout=0)
+                        except Exception as stop_err:
+                            logger.warning(f"Failed to stop idle sandbox {c.id}: {stop_err}")
+
+                    # 2) remove container
                     c.remove(force=True)      # safe even if already gone  [oai_citation:2‡docs.docker.com](https://docs.docker.com/reference/cli/docker/container/rm/?utm_source=chatgpt.com)
-                    # 2) drop DB record (if any)
-                    sb = db.get_sandbox_by_container_id(c.id)  # new helper, see §4
+                    # 3) drop DB record (if any)
+                    sb = db.get_sandbox_by_container_id(c.id)
                     if sb:
                         db.delete_sandbox(sb["id"])
-                    # 3) forget in-memory
+                    # 4) forget in-memory
                     self.sandbox_last_used.pop(c.id, None)
                     logger.info(f"Pruned idle sandbox {c.id}")
         except Exception as e:
