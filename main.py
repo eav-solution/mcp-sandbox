@@ -2,7 +2,6 @@ import uvicorn
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
-from fastapi.staticfiles import StaticFiles
 
 from mcp_sandbox.core.mcp_tools import SandboxToolsPlugin
 from mcp_sandbox.api.routes import configure_app
