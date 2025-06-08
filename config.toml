@@ -5,8 +5,8 @@ port = 8000
 
 # Sandbox configuration
 [sandbox]
-idle_minutes = 15               # TTL for an idle sandbox
-cleanup_interval_seconds = 300  # run the sweeper every 5 minutes
+idle_minutes = 3               # TTL for an idle sandbox
+cleanup_interval_seconds = 30  # run the sweeper every 5 minutes
 
 [auth]
 require_auth = false
